@@ -32,4 +32,13 @@ var (
 	// ErrSnapConfinement when trying to read files on snap installation
 	ErrSnapConfinement = errors.New("can't use --from or --host-file. " +
 		"Snap confinement restrictions doesn't allow to read other than /etc/hosts file")
+
+	// ErrMinikubeStatus when minikube profile is not running
+	ErrMinikubeStatus = errors.New("minikube profile has to be running")
+
+	// ErrMinikubeIngress when minikube doesn't have ingress addon enabled
+	ErrMinikubeIngress = errors.New("minikube profile doesn't have ingress addon enabled")
+
+	// ErrKubernetesNamespace when no namespace is given
+	ErrKubernetesNamespace = errors.New("namespace parameter is required or use --all-namespaces")
 )
