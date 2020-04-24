@@ -8,11 +8,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/guumaster/hostctl/pkg/host"
+	"github.com/guumaster/hostctl/pkg/types"
 )
 
 func Test_Remove(t *testing.T) {
-	cmd := rootCmd
+	cmd := NewRootCmd()
 
 	t.Run("Remove", func(t *testing.T) {
 		tmp := makeTempHostsFile(t, "addCmd")
@@ -30,7 +30,7 @@ func Test_Remove(t *testing.T) {
 
 		actual := "\n" + string(out)
 		expected := listHeader
-		assert.NotContains(t, actual, expected)
+		assert.NotContains(t, expected, actual)
 	})
 
 	t.Run("Remove multiple", func(t *testing.T) {
@@ -62,7 +62,7 @@ func Test_Remove(t *testing.T) {
 		cmd.SetArgs([]string{"remove", "unknown", "--host-file", tmp.Name()})
 
 		err := cmd.Execute()
-		assert.EqualError(t, err, host.ErrUnknownProfile.Error())
+		assert.EqualError(t, err, types.ErrUnknownProfile.Error())
 	})
 
 	t.Run("Remove all", func(t *testing.T) {

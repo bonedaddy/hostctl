@@ -1,13 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
-	"runtime"
 
 	"github.com/spf13/cobra"
 
-	"github.com/guumaster/hostctl/pkg/host"
+	"github.com/guumaster/cligger"
 )
 
 var (
@@ -15,87 +13,178 @@ var (
 	snapBuild string
 )
 
-// rootCmd represents the base command when called without any subcommands
-var rootCmd = &cobra.Command{
-	Use:   "hostctl",
-	Short: "Your dev tool to manage /etc/hosts like a pro",
-	Long: `
-		    __                    __           __     __
-		   / /_   ____    _____  / /_  _____  / /_   / /
-		  / __ \ / __ \  / ___/ / __/ / ___/ / __/  / /
-		 / / / // /_/ / (__  ) / /_  / /__  / /_   / /
-		/_/ /_/ \____/ /____/  \__/  \___/  \__/  /_/
-
-
+func NewRootCmd() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:     "hostctl",
+		Short:   "Your dev tool to manage /etc/hosts like a pro",
+		Version: version,
+		Long: `
 hostctl is a CLI tool to manage your hosts file with ease.
 You can have multiple profiles, enable/disable exactly what
 you need each time with a simple interface.
 `,
-	SilenceUsage: true,
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		err := checkSnapRestrictions(cmd, args)
-		if err != nil {
-			return err
-		}
-		host, _ := cmd.Flags().GetString("host-file")
-		quiet, _ := cmd.Flags().GetBool("quiet")
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			noColor, _ := cmd.Flags().GetBool("no-color")
 
-		defaultHostsFile := getDefaultHostFile()
-		if (host != defaultHostsFile || os.Getenv("HOSTCTL_FILE") != "") && !quiet {
-			fmt.Fprintf(cmd.OutOrStdout(), "Using hosts file: %s\n", host)
-		}
+			if noColor {
+				cligger.DisableColor()
+			}
+			cligger.SetWriter(cmd.OutOrStdout())
+			isSnapBuild := snapBuild == "yes"
+			err := checkSnapRestrictions(cmd, isSnapBuild)
+			if err != nil {
+				return err
+			}
+			host, _ := cmd.Flags().GetString("host-file")
 
-		return nil
-	},
-}
+			showHostFile := host != getDefaultHostFile(isSnapBuild) || os.Getenv("HOSTCTL_FILE") != ""
 
-// Execute is the main entrypoint for CLI usage
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+			quiet := needsQuietOutput(cmd)
+			isHelper := isHelperCmd(cmd)
+
+			if showHostFile && !quiet && !isHelper {
+				cligger.Info("Using hosts file: %s\n", host)
+			}
+
+			return nil
+		},
 	}
-}
 
-func init() {
+	// set CLI version
 	rootCmd.Version = version
+	isSnapBuild := snapBuild == "yes"
 
-	rootCmd.PersistentFlags().String("host-file", getDefaultHostFile(), "Hosts file path")
+	// rootCmd
+	rootCmd.PersistentFlags().String("host-file", getDefaultHostFile(isSnapBuild), "Hosts file path")
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "Run command without output")
-	rootCmd.PersistentFlags().Bool("raw", false, "Output without table borders")
-	rootCmd.PersistentFlags().StringSliceP("column", "c", nil, "Columns to show on lists")
+	rootCmd.PersistentFlags().Bool("raw", false, "Output without borders (same as -o raw)")
+	rootCmd.PersistentFlags().StringP("out", "o", "table", "Output type (table|raw|markdown|json)")
+	rootCmd.PersistentFlags().StringSliceP("column", "c", nil, "Column names to show on lists. comma separated")
+
+	rootCmd.PersistentFlags().Bool("no-color", false, "force colorless output")
+
+	registerCommands(rootCmd)
+
+	return rootCmd
 }
 
-func getDefaultHostFile() string {
-	// Snap confinement doesn't allow to read other than
-	if runtime.GOOS == "linux" && snapBuild == "yes" {
-		return "/etc/hosts"
+func needsQuietOutput(cmd *cobra.Command) bool {
+	quiet, _ := cmd.Flags().GetBool("quiet")
+	out, _ := cmd.Flags().GetString("out")
+
+	if quiet {
+		return true
 	}
 
-	envHostFile := os.Getenv("HOSTCTL_FILE")
-	if envHostFile != "" {
-		return envHostFile
-	}
+	switch {
+	case quiet:
+		return true
+	case out == "json":
+		return true
+	case out == "md" || out == "markdown":
+		return false
 
-	if runtime.GOOS == "windows" {
-		return `C:/Windows/System32/Drivers/etc/hosts`
+	default:
+		return false
 	}
-
-	return "/etc/hosts"
 }
 
-func checkSnapRestrictions(cmd *cobra.Command, _ []string) error {
-	from, _ := cmd.Flags().GetString("from")
-	src, _ := cmd.Flags().GetString("host-file")
+func registerCommands(rootCmd *cobra.Command) {
+	cwd, _ := os.Getwd()
 
-	defaultSrc := getDefaultHostFile()
+	// Helper commands
+	infoCmd := newInfoCmd()
+	completionCmd := newCompletionCmd(rootCmd)
+	genMdDocsCmd := newGenMdDocsCmd(rootCmd)
+	genMdDocsCmd.Flags().String("path", cwd, "Path to save the docs files")
 
-	if snapBuild != "yes" {
-		return nil
-	}
+	// add
+	addCmd, removeCmd := newAddRemoveCmd()
 
-	if from != "" || src != defaultSrc {
-		return host.ErrSnapConfinement
-	}
+	addCmd.Flags().StringP("from", "f", "", "file to read")
+	addCmd.PersistentFlags().
+		DurationP("wait", "w", -1, "Enables a profile for a specific amount of time. (example: 5m, 1h)")
+	addCmd.PersistentFlags().BoolP("uniq", "u", false, "only keep uniq domains per IP")
 
-	return nil
+	// remove
+	removeCmd.Flags().Bool("all", false, "Remove all profiles")
+
+	// add domains
+	addDomainsCmd, removeDomainsCmd := newAddRemoveDomainsCmd()
+	addDomainsCmd.Flags().String("ip", "127.0.0.1", "domains ip")
+
+	// replace
+	replaceCmd := newReplaceCmd()
+	replaceCmd.Flags().StringP("from", "f", "", "file to read")
+	replaceCmd.Flags().BoolP("uniq", "u", false, "only keep uniq domains per IP")
+
+	// toggle
+	toggleCmd := newToggleCmd()
+	toggleCmd.Flags().DurationP("wait", "w", -1, "Toggles a profile for a specific amount of time")
+
+	// enable / disable
+	enableCmd, disableCmd := newEnableDisableCmd()
+
+	enableCmd.Flags().BoolP("all", "", false, "Enable all profiles")
+	enableCmd.Flags().Bool("only", false, "Disable all other profiles")
+	enableCmd.Flags().DurationP("wait", "w", -1, "Enables a profile for a specific amount of time")
+
+	disableCmd.Flags().BoolP("all", "", false, "Disable all profiles")
+	disableCmd.Flags().Bool("only", false, "Enable all other profiles")
+	disableCmd.Flags().DurationP("wait", "w", -1, "Enables a profile for a specific amount of time")
+
+	// backup
+	backupCmd := newBackupCmd()
+	backupCmd.Flags().String("path", cwd, "A path to save the backup")
+
+	// restore
+	restoreCmd := newRestoreCmd()
+	restoreCmd.Flags().String("from", "", "The file to restore from")
+
+	// sync
+	syncCmd := newSyncCmd()
+	syncCmd.PersistentFlags().DurationP("wait", "w", -1, "Enables a profile for a specific amount of time")
+
+	// sync docker
+	syncDockerCmd := newSyncDockerCmd(removeCmd)
+	syncDockerCmd.Flags().String("network", "", "Filter containers from a specific network")
+	syncDockerCmd.Flags().StringP("domain", "d", "loc", "domain where your docker containers will be added")
+
+	// sync docker compose
+	syncDockerComposeCmd := newSyncDockerComposeCmd(removeCmd)
+	syncDockerComposeCmd.Flags().String("network", "", "Filter containers from a specific network")
+	syncDockerComposeCmd.Flags().StringP("domain", "d", "loc", "domain where your docker containers will be added")
+	syncDockerComposeCmd.Flags().String("compose-file", "", "path to docker-compose.yml")
+	syncDockerComposeCmd.Flags().String("project-name", "", "docker compose project name")
+	syncDockerComposeCmd.Flags().Bool("prefix", false, "keep project name prefix from domain name")
+
+	// list
+	listCmd := newListCmd()
+
+	// status
+	statusCmd := newStatusCmd()
+
+	// register sub-commands
+	addCmd.AddCommand(addDomainsCmd)
+	removeCmd.AddCommand(removeDomainsCmd)
+	syncCmd.AddCommand(syncDockerCmd)
+	syncCmd.AddCommand(syncDockerComposeCmd)
+
+	// register all commands
+	rootCmd.AddCommand(addCmd)
+	rootCmd.AddCommand(backupCmd)
+	rootCmd.AddCommand(completionCmd)
+	rootCmd.AddCommand(disableCmd)
+	rootCmd.AddCommand(enableCmd)
+	rootCmd.AddCommand(genMdDocsCmd)
+	rootCmd.AddCommand(infoCmd)
+	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(removeCmd)
+	rootCmd.AddCommand(replaceCmd)
+	rootCmd.AddCommand(restoreCmd)
+	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(syncCmd)
+	rootCmd.AddCommand(toggleCmd)
 }

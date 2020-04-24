@@ -8,11 +8,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/guumaster/hostctl/pkg/host"
+	"github.com/guumaster/hostctl/pkg/types"
 )
 
 func Test_Toggle(t *testing.T) {
-	cmd := rootCmd
+	cmd := NewRootCmd()
 
 	tmp := makeTempHostsFile(t, "enableCmd")
 	defer os.Remove(tmp.Name())
@@ -48,6 +48,6 @@ func Test_Toggle(t *testing.T) {
 		cmd.SetArgs([]string{"toggle", "unknown", "--host-file", tmp.Name()})
 
 		err := cmd.Execute()
-		assert.EqualError(t, err, host.ErrUnknownProfile.Error())
+		assert.EqualError(t, err, types.ErrUnknownProfile.Error())
 	})
 }

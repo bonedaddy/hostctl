@@ -1,8 +1,24 @@
 // package main contains CLI entrypoint
 package main
 
-import "github.com/guumaster/hostctl/pkg/cmd"
+import (
+	"os"
+
+	"github.com/guumaster/cligger"
+
+	"github.com/guumaster/hostctl/pkg/cmd"
+)
 
 func main() {
-	cmd.Execute()
+	_, err := os.Getwd()
+
+	if err != nil {
+		cligger.Fatal("error: %w\n", err)
+	}
+
+	rootCmd := cmd.NewRootCmd()
+
+	if err := rootCmd.Execute(); err != nil {
+		cligger.Fatal("error: %s\n", err)
+	}
 }

@@ -10,7 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/guumaster/hostctl/pkg/host"
+	"github.com/guumaster/hostctl/pkg/file"
+	"github.com/guumaster/hostctl/pkg/profile"
+	"github.com/guumaster/hostctl/pkg/types"
 )
 
 type composeInfo struct {
@@ -18,89 +20,82 @@ type composeInfo struct {
 	File        string
 }
 
-// syncDockerComposeCmd represents the sync docker command
-var syncDockerComposeCmd = &cobra.Command{
-	Use:   "docker-compose [profile] [flags]",
-	Short: "Sync your docker-compose containers IPs with a profile.",
-	Long: `
+func newSyncDockerComposeCmd(removeCmd *cobra.Command) *cobra.Command {
+	return &cobra.Command{
+		Use:   "docker-compose [profile] [flags]",
+		Short: "Sync your docker-compose containers IPs with a profile.",
+		Long: `
 Reads from a docker-compose.yml file  the list of containers and add names and IPs to a profile in your hosts file.
 `,
-	PreRunE: func(cmd *cobra.Command, args []string) error {
-		profile, _ := cmd.Flags().GetString("profile")
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			name, _ := cmd.Flags().GetString("profile")
 
-		if profile == "default" {
-			return host.ErrDefaultProfileError
-		}
-		return nil
-	},
-	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) > 1 {
-			return fmt.Errorf("specify only one profile")
-		}
-		if err := containsDefault(args); err != nil {
-			return err
-		}
-		return nil
-	},
-	RunE: func(cmd *cobra.Command, profiles []string) error {
-		src, _ := cmd.Flags().GetString("host-file")
-		domain, _ := cmd.Flags().GetString("domain")
-		network, _ := cmd.Flags().GetString("network")
-		prefix, _ := cmd.Flags().GetBool("prefix")
+			if name == "default" {
+				return types.ErrDefaultProfile
+			}
+			return nil
+		},
+		Args: commonCheckArgs,
+		RunE: func(cmd *cobra.Command, profiles []string) error {
+			src, _ := cmd.Flags().GetString("host-file")
+			domain, _ := cmd.Flags().GetString("domain")
+			network, _ := cmd.Flags().GetString("network")
+			prefix, _ := cmd.Flags().GetBool("prefix")
 
-		compose, err := getComposeInfo(cmd)
-		if err != nil {
-			return err
-		}
+			compose, err := getComposeInfo(cmd)
+			if err != nil {
+				return err
+			}
 
-		profile := profiles[0]
+			name := profiles[0]
 
-		if profile == "" && compose.ProjectName == "" {
-			return host.ErrMissingProfile
-		}
+			if name == "" && compose.ProjectName == "" {
+				return types.ErrMissingProfile
+			}
 
-		if profile == "" {
-			profile = compose.ProjectName
-			profiles = append(profiles, profile)
-			cmd.SetArgs(profiles)
-		}
+			if name == "" {
+				name = compose.ProjectName
+				profiles = append(profiles, name)
+				cmd.SetArgs(profiles)
+			}
 
-		if domain == "" {
-			domain = fmt.Sprintf("%s.loc", profile)
-		}
+			if domain == "" {
+				domain = fmt.Sprintf("%s.loc", name)
+			}
 
-		ctx := context.Background()
+			ctx := context.Background()
 
-		p, err := host.NewProfileFromDocker(ctx, &host.DockerOptions{
-			Domain:      domain,
-			Network:     network,
-			ComposeFile: compose.File,
-			ProjectName: compose.ProjectName,
-			KeepPrefix:  prefix,
-			Cli:         nil,
-		})
-		if err != nil {
-			return err
-		}
+			p, err := profile.NewProfileFromDocker(ctx, &profile.DockerOptions{
+				Domain:      domain,
+				Network:     network,
+				ComposeFile: compose.File,
+				ProjectName: compose.ProjectName,
+				KeepPrefix:  prefix,
+				Cli:         nil,
+			})
+			if err != nil {
+				return err
+			}
 
-		h, err := host.NewFile(src)
-		if err != nil {
-			return err
-		}
+			h, err := file.NewFile(src)
+			if err != nil {
+				return err
+			}
 
-		p.Name = profile
-		p.Status = host.Enabled
+			p.Name = name
+			p.Status = types.Enabled
 
-		err = h.AddProfile(*p)
-		if err != nil {
-			return err
-		}
+			err = h.AddProfile(p)
+			if err != nil {
+				return err
+			}
 
-		return h.Flush()
-	},
-	PostRunE: func(cmd *cobra.Command, args []string) error {
-		return postActionCmd(cmd, args, removeCmd, false)
-	},
+			return h.Flush()
+		},
+		PostRunE: func(cmd *cobra.Command, args []string) error {
+			return postActionCmd(cmd, args, removeCmd, false)
+		},
+	}
 }
 
 func getComposeInfo(cmd *cobra.Command) (*composeInfo, error) {

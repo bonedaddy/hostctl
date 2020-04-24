@@ -2,7 +2,7 @@ linters:
   disable:
     - goimports
     - gochecknoglobals
-    - gochecknoinits
+    - gosec
     - prealloc
   enable-all: true
 

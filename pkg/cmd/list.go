@@ -5,55 +5,51 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/guumaster/hostctl/pkg/host"
+	"github.com/guumaster/hostctl/pkg/file"
+	"github.com/guumaster/hostctl/pkg/types"
 )
 
-// listCmd represents the list command
-var listCmd = &cobra.Command{
-	Use:   "list [profiles] [flags]",
-	Short: "Shows a detailed list of profiles on your hosts file.",
-	Long: `
+func newListCmd() *cobra.Command {
+	listCmd := &cobra.Command{
+		Use:   "list [profiles] [flags]",
+		Short: "Shows a detailed list of profiles on your hosts file.",
+		Long: `
 Shows a detailed list of profiles on your hosts file with name, ip and host name.
 You can filter by profile name.
 
 The "default" profile is all the content that is not handled by hostctl tool.
 `,
-	RunE: func(cmd *cobra.Command, profiles []string) error {
-		src, _ := cmd.Flags().GetString("host-file")
-		raw, _ := cmd.Flags().GetBool("raw")
-		cols, _ := cmd.Flags().GetStringSlice("column")
+		RunE: func(cmd *cobra.Command, profiles []string) error {
+			src, _ := cmd.Flags().GetString("host-file")
 
-		h, err := host.NewFile(src)
-		if err != nil {
-			return err
-		}
+			h, err := file.NewFile(src)
+			if err != nil {
+				return err
+			}
 
-		h.List(&host.ListOptions{
-			Writer:   cmd.OutOrStdout(),
-			Profiles: profiles,
-			RawTable: raw,
-			Columns:  cols,
-		})
-		return nil
-	},
+			r := getRenderer(cmd, nil)
+
+			h.List(r, &file.ListOptions{
+				Profiles: profiles,
+			})
+			return nil
+		},
+	}
+
+	listCmd.AddCommand(makeListStatusCmd(types.Enabled))
+	listCmd.AddCommand(makeListStatusCmd(types.Disabled))
+
+	return listCmd
 }
 
-func init() {
-	rootCmd.AddCommand(listCmd)
-
-	listCmd.AddCommand(makeListStatusCmd(host.Enabled))
-	listCmd.AddCommand(makeListStatusCmd(host.Disabled))
-}
-
-// makeListStatusCmd represents the list enabled command
-var makeListStatusCmd = func(status host.ProfileStatus) *cobra.Command {
+var makeListStatusCmd = func(status types.Status) *cobra.Command {
 	cmd := ""
 	alias := ""
 	switch status {
-	case host.Enabled:
+	case types.Enabled:
 		cmd = "enabled"
 		alias = "on"
-	case host.Disabled:
+	case types.Disabled:
 		cmd = "disabled"
 		alias = "off"
 	}
@@ -64,20 +60,18 @@ var makeListStatusCmd = func(status host.ProfileStatus) *cobra.Command {
 		Long: fmt.Sprintf(`
 Shows a detailed list of %s profiles on your hosts file with name, ip and host name.
 `, cmd),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, profiles []string) error {
 			src, _ := cmd.Flags().GetString("host-file")
-			raw, _ := cmd.Flags().GetBool("raw")
-			cols, _ := cmd.Flags().GetStringSlice("column")
 
-			h, err := host.NewFile(src)
+			h, err := file.NewFile(src)
 			if err != nil {
 				return err
 			}
 
-			h.List(&host.ListOptions{
-				Writer:       cmd.OutOrStdout(),
-				RawTable:     raw,
-				Columns:      cols,
+			r := getRenderer(cmd, nil)
+
+			h.List(r, &file.ListOptions{
+				Profiles:     profiles,
 				StatusFilter: status,
 			})
 

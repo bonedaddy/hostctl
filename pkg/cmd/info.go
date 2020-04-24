@@ -6,15 +6,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// infoCmd represents the enable command
-var infoCmd = &cobra.Command{
-	Use:    "info",
-	Hidden: true,
-	Run: func(cmd *cobra.Command, profiles []string) {
-		fmt.Fprintln(cmd.OutOrStdout(), "Your dev tool to manage /etc/hosts like a pro!")
-	},
-}
+func newInfoCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "info",
+		Hidden: true,
+		Run: func(cmd *cobra.Command, profiles []string) {
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), `
+        __                       __             __     __
+       / /_    ____     _____   / /_   _____   / /_   / /
+      / __ \  / __ \   / ___/  / __/  / ___/  / __/  / /
+     / / / / / /_/ /  (__  )  / /_   / /__   / /_   / /
+    /_/ /_/  \____/  /____/   \__/   \___/   \__/  /_/  Version: `+version+`
 
-func init() {
-	rootCmd.AddCommand(infoCmd)
+     Your dev tool to manage /etc/hosts like a pro
+`)
+		},
+	}
 }
